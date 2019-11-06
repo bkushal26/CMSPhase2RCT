@@ -181,7 +181,7 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
 	       ((uint64_t)ecalClustersStitched[phi][eta]);
 	 }
 	 else if(TOWERS_IN_ETA%2 && eta == TOWERS_IN_ETA-1){
-	    r.data = ((uint64_t)ecalClustersStitched[phi][phi]);
+	    r.data = ((uint64_t)ecalClustersStitched[phi][eta]);
 	 }
 	 else if(TOWERS_IN_ETA%2 && eta > TOWERS_IN_ETA-1)
 	    r.data = 0;
