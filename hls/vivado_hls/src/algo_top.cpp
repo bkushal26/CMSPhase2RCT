@@ -8,15 +8,14 @@
 using namespace std;
 using namespace algo;
 
-
-
 // Each input link carries the information of a 5x5 region
 // Last 16-bits are reserved for CRC
-inline Tower unpackInputLink(hls::stream<axiword> &link) {
+Cluster unpackInputLink(hls::stream<axiword> &link) {
 #pragma HLS INTERFACE axis port=link
 #pragma HLS INLINE
 
-   Tower tower;
+   Crystal crystals[5][5];
+#pragma HLS ARRAY_PARTITION variable=crystals complete dim=0 
 
    uint8_t carry = 0;
 
@@ -33,46 +32,46 @@ inline Tower unpackInputLink(hls::stream<axiword> &link) {
 	 case 0: {
 		    for (size_t k = 0; k < 4; k++) {
 #pragma LOOP UNROLL
-		       tower.crystals[0][k] = Crystal(data >> (k * 14));
+		       crystals[0][k] = Crystal(data >> (k * 14));
 		    }
 		 } break;
 	 case 1: {
-		    tower.crystals[0][4] = Crystal((data << 8) | carry);
+		    crystals[0][4] = Crystal((data << 8) | carry);
 		    for (size_t k = 0; k < 4; k++) {
 #pragma LOOP UNROLL
-		       tower.crystals[1][k] = Crystal(data >> (k * 14 + 6));
+		       crystals[1][k] = Crystal(data >> (k * 14 + 6));
 		    }
 		 } break;
 	 case 2: {
-		    tower.crystals[1][4] = Crystal(data);
+		    crystals[1][4] = Crystal(data);
 		    for (size_t k = 0; k < 3; k++) {
 #pragma LOOP UNROLL
-		       tower.crystals[2][k] = Crystal(data >> (k * 14 + 14));
+		       crystals[2][k] = Crystal(data >> (k * 14 + 14));
 		    }
 		 } break;
 	 case 3: {
-		    tower.crystals[2][3] = Crystal((data << 8) | carry);
-		    tower.crystals[2][4] = Crystal(data >> 6);
+		    crystals[2][3] = Crystal((data << 8) | carry);
+		    crystals[2][4] = Crystal(data >> 6);
 		    for (size_t k = 0; k < 3; k++) {
 #pragma LOOP UNROLL
-		       tower.crystals[3][k] = Crystal(data >> (k * 14 + 20));
+		       crystals[3][k] = Crystal(data >> (k * 14 + 20));
 		    }
 		 } break;
 	 case 4: {
 		    for (size_t k = 0; k < 2; k++) {
 #pragma LOOP UNROLL
-		       tower.crystals[3][k+3] = Crystal(data >> (k * 14));
+		       crystals[3][k+3] = Crystal(data >> (k * 14));
 		    }
 		    for (size_t k = 0; k < 2; k++) {
 #pragma LOOP UNROLL
-		       tower.crystals[4][k] = Crystal(data >> (k * 14 + 28));
+		       crystals[4][k] = Crystal(data >> (k * 14 + 28));
 		    }
 		 } break;
 	 case 5: {
-		    tower.crystals[4][2] = Crystal((data << 8) | carry);
+		    crystals[4][2] = Crystal((data << 8) | carry);
 		    for (size_t k = 0; k < 2; k++) {
 #pragma LOOP UNROLL
-		       tower.crystals[4][k+3] = Crystal(data >> (k * 14 + 6));
+		       crystals[4][k+3] = Crystal(data >> (k * 14 + 6));
 		    }
 		 } break;
 	 default: break;
@@ -81,6 +80,11 @@ inline Tower unpackInputLink(hls::stream<axiword> &link) {
       // Remaining data to be used on the next cycle
       carry = data >> 56;
    }
+
+
+   Cluster tower;
+   //compute clusters in each tower using 5x5 crystals
+   tower = computeCluster(crystals);
 
    return tower;
 }
@@ -95,7 +99,7 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
 #ifndef ALGO_PASSTHROUGH
 
    // Step 1: Unpack links
-   Tower ecalTowers[TOWERS_IN_ETA][TOWERS_IN_PHI];
+   Cluster ecalTowers[TOWERS_IN_ETA][TOWERS_IN_PHI];
 #pragma HLS ARRAY_PARTITION variable=ecalTowers complete dim=0
 
    for (size_t i = 0; i < TOWERS_IN_ETA * TOWERS_IN_PHI; i++) {
@@ -112,26 +116,43 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
    }
 
    // Step 2: Compute clusters
-   Cluster ecalClusters[TOWERS_IN_ETA][TOWERS_IN_PHI];
+   Cluster ecalClusters[TOWERS_IN_PHI][TOWERS_IN_ETA];
 #pragma HLS ARRAY_PARTITION variable=ecalClusters complete dim=0
 
    for (size_t i = 0; i < TOWERS_IN_ETA * TOWERS_IN_PHI; i++) {
 #pragma LOOP UNROLL
       size_t  ieta = i / TOWERS_IN_PHI;  
       size_t  iphi = i % TOWERS_IN_PHI;
-      uint16_t towerEt = 0;
-      ecalClusters[ieta][iphi] = ecalTowers[ieta][iphi].computeCluster(ieta, iphi, towerEt);
+
+      ecalClusters[iphi][ieta].et        = ecalTowers[ieta][iphi].et;
+      ecalClusters[iphi][ieta].tower_eta = ieta;
+      ecalClusters[iphi][ieta].tower_phi = iphi;
+      ecalClusters[iphi][ieta].peak_eta  = ecalTowers[ieta][iphi].peak_eta;
+      ecalClusters[iphi][ieta].peak_phi  = ecalTowers[ieta][iphi].peak_phi;
+
+  }
 
 #ifndef __SYNTHESIS__
-      cout << "Clustering["<<ieta<<"]["<<iphi<<"]:"<< ecalClusters[ieta][iphi].toString() << endl;
-#endif
+   for (size_t i = 0; i < TOWERS_IN_ETA ; i++) {
+      cout << "Clustering["<<i<<"][0]:"<< ecalClusters[0][i].toString() ;
+      cout << "  ||  "<<std::setw(10);
+      cout << "Clustering["<<i<<"][1]:"<< ecalClusters[1][i].toString() << endl;
    }
+#endif
+ 
+   // Step 3: Merge neighbours in eta
+   Cluster etaStitched_phi1[TOWERS_IN_ETA];
+   Cluster etaStitched_phi2[TOWERS_IN_ETA];
+#pragma HLS ARRAY_PARTITION variable=etaStitched_phi1 complete dim=0 
+#pragma HLS ARRAY_PARTITION variable=etaStitched_phi2 complete dim=0 
 
-   // Step 3: Merge neighbor clusters
+   bool etaStitch_phi1 = stitchInEta( ecalClusters[0], etaStitched_phi1);
+   bool etaStitch_phi2 = stitchInEta( ecalClusters[1], etaStitched_phi1);
+
+   //Step 4: Merge neighbours in phi
    Cluster ecalClustersStitched[TOWERS_IN_ETA][TOWERS_IN_PHI];
 #pragma HLS ARRAY_PARTITION variable=ecalClustersStitched complete dim=0
-
-   Cluster::stitchRegion<TOWERS_IN_ETA,TOWERS_IN_PHI>(ecalClusters, ecalClustersStitched);
+   bool phiStitch = stitchInPhi(etaStitched_phi1, etaStitched_phi1, ecalClustersStitched);
 
 #ifndef __SYNTHESIS__
    for (size_t i = 0; i < TOWERS_IN_ETA; i++) {
@@ -148,7 +169,7 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
 #pragma LOOP UNROLL
 
 	 const size_t phi = i/2; // Two links carry information for each eta
-	 const size_t eta =  j*2 + (i%2)*10;                                                                                                                                                                
+	 const size_t eta =  j*2 + (i%2)*10;
 
 	 axiword r; r.last = 0; r.user = 0;
 
