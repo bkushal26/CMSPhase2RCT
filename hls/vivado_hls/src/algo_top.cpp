@@ -98,66 +98,62 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
 
 #ifndef ALGO_PASSTHROUGH
 
-   // Step 1: Unpack links
-   Cluster ecalTowers[TOWERS_IN_ETA][TOWERS_IN_PHI];
-#pragma HLS ARRAY_PARTITION variable=ecalTowers complete dim=0
-
-   for (size_t i = 0; i < TOWERS_IN_ETA * TOWERS_IN_PHI; i++) {
-#pragma LOOP UNROLL
-
-      size_t  ieta = i / TOWERS_IN_PHI;  
-      size_t  iphi = i % TOWERS_IN_PHI;
-      ecalTowers[ieta][iphi] = unpackInputLink(link_in[i]);
-
-#ifndef __SYNTHESIS__
-      cout<<"ecalTowers["<<ieta<<"]["<<iphi<<"]:"<<endl<<ecalTowers[ieta][iphi].toString()<<std::endl;
-#endif
-
-   }
-
-   // Step 2: Compute clusters
+   // Step 1: Unpack links and compute clusters
    Cluster ecalClusters[TOWERS_IN_PHI][TOWERS_IN_ETA];
 #pragma HLS ARRAY_PARTITION variable=ecalClusters complete dim=0
 
    for (size_t i = 0; i < TOWERS_IN_ETA * TOWERS_IN_PHI; i++) {
 #pragma LOOP UNROLL
+
       size_t  ieta = i / TOWERS_IN_PHI;  
       size_t  iphi = i % TOWERS_IN_PHI;
+      ecalClusters[iphi][ieta] = unpackInputLink(link_in[i]);
 
-      ecalClusters[iphi][ieta].et        = ecalTowers[ieta][iphi].et;
       ecalClusters[iphi][ieta].tower_eta = ieta;
       ecalClusters[iphi][ieta].tower_phi = iphi;
-      ecalClusters[iphi][ieta].peak_eta  = ecalTowers[ieta][iphi].peak_eta;
-      ecalClusters[iphi][ieta].peak_phi  = ecalTowers[ieta][iphi].peak_phi;
 
-  }
+//- #ifndef __SYNTHESIS__
+//-       cout<<"ecalClusters["<<iphi<<"]["<<ieta<<"]: "<<ecalClusters[iphi][ieta].toString()<<std::endl;
+//- #endif
+
+   }
 
 #ifndef __SYNTHESIS__
    for (size_t i = 0; i < TOWERS_IN_ETA ; i++) {
-      cout << "Clustering["<<i<<"][0]:"<< ecalClusters[0][i].toString() ;
-      cout << "  ||  "<<std::setw(10);
-      cout << "Clustering["<<i<<"][1]:"<< ecalClusters[1][i].toString() << endl;
+      cout << "Clustering[0]["<<i<<"]:"<< ecalClusters[0][i].toString() ;
+      cout << "  ||  "; 
+      cout << "Clustering[1]["<<i<<"]:"<< ecalClusters[1][i].toString() << endl;
    }
 #endif
  
-   // Step 3: Merge neighbours in eta
+   // Step 2: Merge neighbours in eta
    Cluster etaStitched_phi1[TOWERS_IN_ETA];
    Cluster etaStitched_phi2[TOWERS_IN_ETA];
 #pragma HLS ARRAY_PARTITION variable=etaStitched_phi1 complete dim=0 
 #pragma HLS ARRAY_PARTITION variable=etaStitched_phi2 complete dim=0 
 
    bool etaStitch_phi1 = stitchInEta( ecalClusters[0], etaStitched_phi1);
-   bool etaStitch_phi2 = stitchInEta( ecalClusters[1], etaStitched_phi1);
+   bool etaStitch_phi2 = stitchInEta( ecalClusters[1], etaStitched_phi2);
 
-   //Step 4: Merge neighbours in phi
-   Cluster ecalClustersStitched[TOWERS_IN_ETA][TOWERS_IN_PHI];
+#ifndef __SYNTHESIS__
+   cout << " *** ETA stitched *** "<<std::endl;
+   for (size_t i = 0; i < TOWERS_IN_ETA ; i++) {
+      cout << "Clustering[0]["<<i<<"]:"<< etaStitched_phi1[i].toString() ;
+      cout << "  ||  "; 
+      cout << "Clustering[1]["<<i<<"]:"<< etaStitched_phi2[i].toString() << endl;
+   }
+#endif
+
+   //Step 3: Merge neighbours in phi
+   Cluster ecalClustersStitched[TOWERS_IN_PHI][TOWERS_IN_ETA];
 #pragma HLS ARRAY_PARTITION variable=ecalClustersStitched complete dim=0
-   bool phiStitch = stitchInPhi(etaStitched_phi1, etaStitched_phi1, ecalClustersStitched);
+   
+   bool phiStitch = stitchInPhi(etaStitched_phi1, etaStitched_phi2, ecalClustersStitched);
 
 #ifndef __SYNTHESIS__
    for (size_t i = 0; i < TOWERS_IN_ETA; i++) {
       for (size_t j = 0; j < TOWERS_IN_PHI; j++) {
-	 cout << "Stitched["<<i<<"]["<<j<<"]:"<< ecalClustersStitched[i][j].toString() << endl;
+	 cout << "Stitched["<<j<<"]["<<i<<"]:"<< ecalClustersStitched[j][i].toString() << endl;
       }
    }
 #endif
@@ -174,18 +170,18 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
 	 axiword r; r.last = 0; r.user = 0;
 
 	 if( TOWERS_IN_ETA%2 == 0 && eta < TOWERS_IN_ETA){ // if eta is an even number
-	    r.data = ((uint64_t)ecalClustersStitched[eta+1][phi] << 32) |
-	       ((uint64_t)ecalClustersStitched[eta][phi]);
+	    r.data = ((uint64_t)ecalClustersStitched[phi][eta+1] << 32) |
+	       ((uint64_t)ecalClustersStitched[phi][eta]);
 	 }
 	 else if(TOWERS_IN_ETA%2 == 0 && eta >= TOWERS_IN_ETA)
 	    r.data = 0;
 
 	 if(TOWERS_IN_ETA%2 && eta < TOWERS_IN_ETA-1){ // it eta has odd geometry
-	    r.data = ((uint64_t)ecalClustersStitched[eta+1][phi] << 32) |
-	       ((uint64_t)ecalClustersStitched[eta][phi]);
+	    r.data = ((uint64_t)ecalClustersStitched[phi][eta+1] << 32) |
+	       ((uint64_t)ecalClustersStitched[phi][eta]);
 	 }
 	 else if(TOWERS_IN_ETA%2 && eta == TOWERS_IN_ETA-1){
-	    r.data = ((uint64_t)ecalClustersStitched[eta][phi]);
+	    r.data = ((uint64_t)ecalClustersStitched[phi][phi]);
 	 }
 	 else if(TOWERS_IN_ETA%2 && eta > TOWERS_IN_ETA-1)
 	    r.data = 0;

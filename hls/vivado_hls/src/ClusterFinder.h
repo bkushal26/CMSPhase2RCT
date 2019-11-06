@@ -36,8 +36,8 @@ struct Crystal {
 #endif
 
    ap_uint<10> energy;
-   ap_uint<3> timing;
-   bool spike;
+   ap_uint<3>  timing;
+   ap_uint<1>  spike;
 };
 
 /* ECAL cluster object definition */
@@ -78,15 +78,15 @@ struct Cluster {
 
 #ifndef __SYNTHESIS__
    string toString() const {
-      return "Cluster [" + to_string(this->tower_eta) + "(" + to_string(this->peak_eta) + ")," + to_string(this->tower_phi) + "(" + to_string(this->peak_phi) + ")]: " + to_string(this->et);
+      return "Cluster [" + to_string(this->tower_phi) + "(" + to_string(this->peak_phi) + "), " + to_string(this->tower_eta) + "(" + to_string(this->peak_eta) + ")"  + "]: " + to_string(this->et);
    }
 #endif
 
-   uint16_t et;
-   ap_uint<4> tower_phi;
-   ap_uint<6> tower_eta;
-   ap_uint<3> peak_phi;
-   ap_uint<3> peak_eta;
+   ap_uint<16> et;
+   ap_uint<4>  tower_phi;
+   ap_uint<6>  tower_eta;
+   ap_uint<3>  peak_phi;
+   ap_uint<3>  peak_eta;
 };
 
 inline uint16_t getPeakBinOf5(const uint16_t et[5], const uint16_t etSum) {
@@ -162,11 +162,7 @@ Cluster computeCluster(const Crystal crystals[5][5]) {
    return cluster;
 }
 
-
-
 void stitchNeigbours(const Cluster Ai, const Cluster Bi, Cluster &Ao, Cluster &Bo) {
-   // For some reason if this pragma is set then the code doesn't synthetize properly...
-   //#pragma HLS INLINE
    // Check that the clusters are neigbhors in eta or phi
    if (Ai.peak_eta == Bi.peak_eta || Ai.peak_phi == Bi.peak_phi ) {
       if(Ai.et > Bi.et){
@@ -208,28 +204,31 @@ bool stitchInEta(const Cluster in[TOWERS_IN_ETA], Cluster out[TOWERS_IN_ETA]){
 #pragma HLS ARRAY_PARTITION variable=stitch_eta_step1 complete dim=0
 #pragma HLS ARRAY_PARTITION variable=stitch_eta_step2 complete dim=0
 
-   for (size_t teta = 0; teta < TOWERS_IN_ETA; teta++) {
-#pragma LOOP UNROLL
-      stitch_eta_step1[teta] = in[teta];
-   }
-
-   // Stitch in eta: first set of pairs (0,1), (2,3),...(15,16) 
+   // Stitch in eta: first set of pairs (0,1), (2,3),...(14,15) 
    for (size_t teta = 0; teta < TOWERS_IN_ETA-1; teta += 2) {
 #pragma LOOP UNROLL
-      if(in[teta].peak_eta == 4 && in[teta+1].peak_eta == 0 )
+      if(in[teta].peak_eta == 4 && in[teta+1].peak_eta == 0 ){
 	 stitchNeigbours(in[teta], in[teta+1], stitch_eta_step1[teta], stitch_eta_step1[teta+1]);
+      } 
+      else{
+	 stitch_eta_step1[teta]   = in[teta];
+	 stitch_eta_step1[teta+1] = in[teta+1];
+      }
    }
+   stitch_eta_step1[TOWERS_IN_ETA-1] = in[TOWERS_IN_ETA-1];
       
-   for (size_t teta = 0; teta < TOWERS_IN_ETA; teta++) {
-#pragma LOOP UNROLL
-      stitch_eta_step2[teta] = stitch_eta_step1[teta];
-   }
+   // Stitch in eta: second set of pairs (1,2), (3,4),...(15,16) 
+   stitch_eta_step2[0]   = stitch_eta_step1[0];
 
-   // Stitch in eta: second set of pairs (1,2), (3,4),...(14,15) 
    for (size_t teta = 1; teta < TOWERS_IN_ETA; teta += 2) {
 #pragma LOOP UNROLL
-      if(in[teta].peak_eta == 4 && in[teta+1].peak_eta == 0 )
+      if(in[teta].peak_eta == 4 && in[teta+1].peak_eta == 0 ){
 	 stitchNeigbours(stitch_eta_step1[teta], stitch_eta_step1[teta+1], stitch_eta_step2[teta], stitch_eta_step2[teta+1]);
+      } 
+      else{
+	 stitch_eta_step2[teta]   = stitch_eta_step1[teta];
+	 stitch_eta_step2[teta+1] = stitch_eta_step1[teta+1];
+      }
    }
 
    for (size_t teta = 0; teta < TOWERS_IN_ETA; teta++) {
@@ -240,37 +239,35 @@ bool stitchInEta(const Cluster in[TOWERS_IN_ETA], Cluster out[TOWERS_IN_ETA]){
    return true;
 }
 
-bool stitchInPhi(const Cluster inPhi1[TOWERS_IN_ETA], const Cluster inPhi2[TOWERS_IN_ETA], Cluster out[TOWERS_IN_ETA][TOWERS_IN_PHI]){
+bool stitchInPhi(const Cluster inPhi1[TOWERS_IN_ETA], const Cluster inPhi2[TOWERS_IN_ETA], Cluster out[TOWERS_IN_PHI][TOWERS_IN_ETA]){
 
 #pragma HLS ARRAY_PARTITION variable=inPhi1 complete dim=0
 #pragma HLS ARRAY_PARTITION variable=inPhi2 complete dim=0
 #pragma HLS ARRAY_PARTITION variable=out complete dim=0
 
-   Cluster stitch_phi[TOWERS_IN_ETA][TOWERS_IN_PHI];
+   Cluster stitch_phi[TOWERS_IN_PHI][TOWERS_IN_ETA];
 #pragma HLS ARRAY_PARTITION variable=stitch_phi complete dim=0
-
-   for (size_t teta = 0; teta < TOWERS_IN_ETA; teta++) {
-#pragma LOOP UNROLL
-      stitch_phi[teta][0] = inPhi1[teta];
-      stitch_phi[teta][1] = inPhi2[teta];
-   }
 
    // Stitch in phi
    for (size_t teta = 0; teta < TOWERS_IN_ETA; teta++) {
 #pragma LOOP UNROLL
 
-      if(inPhi1[teta].peak_phi == 4 && inPhi2[teta].peak_phi == 0 )
-	 stitchNeigbours(inPhi1[teta], inPhi2[teta], stitch_phi[teta][0], stitch_phi[teta][1]);
+      if(inPhi1[teta].peak_phi == 4 && inPhi2[teta].peak_phi == 0 ){
+	 stitchNeigbours(inPhi1[teta], inPhi2[teta], stitch_phi[0][teta], stitch_phi[1][teta]);
+      }
+      else{
+	 stitch_phi[0][teta] = inPhi1[teta];
+	 stitch_phi[1][teta] = inPhi2[teta];
+      }
    }
 
    for (size_t teta = 0; teta < TOWERS_IN_ETA; teta++) {
 #pragma LOOP UNROLL
-      out[teta][0] = stitch_phi[teta][0];
-      out[teta][1] = stitch_phi[teta][1];
+      out[0][teta] = stitch_phi[0][teta];
+      out[1][teta] = stitch_phi[1][teta];
    }
 
    return true;
 }
-
 
 #endif /*!__CLUSTERFINDER_H__*/
