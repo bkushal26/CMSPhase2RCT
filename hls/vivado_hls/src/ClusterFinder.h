@@ -42,22 +42,20 @@ struct Crystal {
 
 /* ECAL cluster object definition */
 struct Cluster {
-   Cluster() : et(0), tower_phi(0), tower_eta(0), peak_phi(0), peak_eta(0) {};
+   Cluster() : et(0),  peak_phi(0), peak_eta(0), tower_et(0) {};
 
    Cluster(uint32_t i) {
       this->et = i;
-      this->tower_phi = i >> 16;
-      this->tower_eta = i >> 20;
-      this->peak_phi = i >> 26;
-      this->peak_eta = i >> 29;
+      this->peak_phi = i >> 16;
+      this->peak_eta = i >> 19;
+      this->tower_et = i >> 22; 
    }
 
    Cluster& operator=(const Cluster& rhs) {
       et        = rhs.et;
-      tower_phi = rhs.tower_phi;
-      tower_eta = rhs.tower_eta;
       peak_phi  = rhs.peak_phi;
       peak_eta  = rhs.peak_eta;
+      tower_et  = rhs.tower_et;
 
       return *this;
    }
@@ -69,24 +67,22 @@ struct Cluster {
 
    inline operator uint32_t() {
 #pragma HLS INLINE
-      return  ((uint32_t)(this->peak_eta) << 29) |
-	 ((uint32_t)(this->peak_phi) << 26) |
-	 ((uint32_t)(this->tower_eta) << 20) |
-	 ((uint32_t)(this->tower_phi) << 16) |
+      return  ((uint32_t)(this->tower_et) << 22) |
+	 ((uint32_t)(this->peak_eta) << 19) |
+	 ((uint32_t)(this->peak_phi) << 16) |
 	 (uint32_t)this->et;
    }
 
 #ifndef __SYNTHESIS__
    string toString() const {
-      return "Cluster [" + to_string(this->tower_phi) + "(" + to_string(this->peak_phi) + "), " + to_string(this->tower_eta) + "(" + to_string(this->peak_eta) + ")"  + "]: " + to_string(this->et);
+      return "Cluster (" + to_string(this->peak_phi) + "," + to_string(this->peak_eta) + ")"  + ": " + to_string(this->et);
    }
 #endif
 
    ap_uint<16> et;
-   ap_uint<4>  tower_phi;
-   ap_uint<6>  tower_eta;
    ap_uint<3>  peak_phi;
    ap_uint<3>  peak_eta;
+   ap_uint<10> tower_et;
 };
 
 inline uint16_t getPeakBinOf5(const uint16_t et[5], const uint16_t etSum) {
@@ -108,6 +104,8 @@ inline uint16_t getPeakBinOf5(const uint16_t et[5], const uint16_t etSum) {
 }
 
 Cluster computeCluster(const Crystal crystals[5][5]) {
+//#pragma HLS data_pack variable=crystals
+#pragma HLS ARRAY_PARTITION variable=crystals complete dim=0
 
    uint16_t phi_strip[5], eta_strip[5];
 #pragma HLS ARRAY_PARTITION variable=phi_strip complete dim=0
@@ -138,7 +136,11 @@ Cluster computeCluster(const Crystal crystals[5][5]) {
 #pragma LOOP UNROLL
       tet += eta_strip[eta];
    }
-   //towerEt = tet;
+
+   ap_uint<10> towerEt;
+
+   towerEt = (tet > 0x3FF) ? 0x3FF : tet;
+      
 
    // Compute peak locations
    ap_uint<3> peakEta = getPeakBinOf5(eta_strip, tet);
@@ -153,11 +155,12 @@ Cluster computeCluster(const Crystal crystals[5][5]) {
    }
 
    Cluster cluster;
+//#pragma HLS data_pack variable=cluster
+
    cluster.et = clusterEt;
-   cluster.tower_eta = 63; //set at later stage
-   cluster.tower_phi = 15; //set at later stage
    cluster.peak_eta = peakEta;
    cluster.peak_phi = peakPhi;
+   cluster.tower_et = towerEt;
 
    return cluster;
 }
@@ -185,8 +188,8 @@ void stitchNeigbours(const Cluster Ai, const Cluster Bi, Cluster &Ao, Cluster &B
       }
 
 #ifndef __SYNTHESIS__
-      cout << "Stitching cluster cluster [" + to_string(Ai.tower_eta) + "," + to_string(Ai.tower_phi) + "]:"<<to_string(Ai.et)<<" with [" <<
-	 to_string(Bi.tower_eta) + "," + to_string(Bi.tower_phi) + "]:"<<to_string(Bi.et) << endl;
+      cout << "Stitching cluster cluster [(" + to_string(Ai.peak_phi) + ", " + to_string(Ai.peak_eta) + ")]:"<<to_string(Ai.et)<<" with [(" <<
+	 to_string(Bi.peak_phi) + ", " + to_string(Bi.peak_eta) +")]:"<<to_string(Bi.et) << endl;
 #endif
 
    } else {
@@ -196,16 +199,23 @@ void stitchNeigbours(const Cluster Ai, const Cluster Bi, Cluster &Ao, Cluster &B
 }
 
 bool stitchInEta(const Cluster in[TOWERS_IN_ETA], Cluster out[TOWERS_IN_ETA]){
+//#pragma HLS data_pack variable=in
+//#pragma HLS data_pack variable=out
 #pragma HLS ARRAY_PARTITION variable=in complete dim=0
 #pragma HLS ARRAY_PARTITION variable=out complete dim=0
 
    Cluster stitch_eta_step1[TOWERS_IN_ETA];
    Cluster stitch_eta_step2[TOWERS_IN_ETA];
-#pragma HLS ARRAY_PARTITION variable=stitch_eta_step1 complete dim=0
-#pragma HLS ARRAY_PARTITION variable=stitch_eta_step2 complete dim=0
+//#pragma HLS data_pack variable=stitch_eta_step1
+//#pragma HLS data_pack variable=stitch_eta_step2
+
+   #pragma HLS ARRAY_PARTITION variable=stitch_eta_step1 complete dim=0
+   #pragma HLS ARRAY_PARTITION variable=stitch_eta_step2 complete dim=0
 
    // Stitch in eta: first set of pairs (0,1), (2,3),...(14,15) 
+   stitch_eta_step1[TOWERS_IN_ETA-1] = in[TOWERS_IN_ETA-1]; //needed for ODD eta geometry (UNcomment it)
    for (size_t teta = 0; teta < TOWERS_IN_ETA-1; teta += 2) {
+//#pragma HLS dataflow
 #pragma LOOP UNROLL
       if(in[teta].peak_eta == 4 && in[teta+1].peak_eta == 0 ){
 	 stitchNeigbours(in[teta], in[teta+1], stitch_eta_step1[teta], stitch_eta_step1[teta+1]);
@@ -214,13 +224,14 @@ bool stitchInEta(const Cluster in[TOWERS_IN_ETA], Cluster out[TOWERS_IN_ETA]){
 	 stitch_eta_step1[teta]   = in[teta];
 	 stitch_eta_step1[teta+1] = in[teta+1];
       }
+   //cout<<teta<<":"<<stitch_eta_step1[teta].toString()<<"   "<<teta+1<<":"<<stitch_eta_step1[teta+1].toString()<<std::endl;
    }
-   stitch_eta_step1[TOWERS_IN_ETA-1] = in[TOWERS_IN_ETA-1];
       
    // Stitch in eta: second set of pairs (1,2), (3,4),...(15,16) 
    stitch_eta_step2[0]   = stitch_eta_step1[0];
-
-   for (size_t teta = 1; teta < TOWERS_IN_ETA; teta += 2) {
+//   stitch_eta_step1[TOWERS_IN_ETA-1] = in[TOWERS_IN_ETA-1]; //needed for even geometry of ETA
+   for (size_t teta = 1; teta < TOWERS_IN_ETA-1; teta += 2) {
+//#pragma HLS dataflow
 #pragma LOOP UNROLL
       if(in[teta].peak_eta == 4 && in[teta+1].peak_eta == 0 ){
 	 stitchNeigbours(stitch_eta_step1[teta], stitch_eta_step1[teta+1], stitch_eta_step2[teta], stitch_eta_step2[teta+1]);
@@ -240,10 +251,14 @@ bool stitchInEta(const Cluster in[TOWERS_IN_ETA], Cluster out[TOWERS_IN_ETA]){
 }
 
 bool stitchInPhi(const Cluster inPhi1[TOWERS_IN_ETA], const Cluster inPhi2[TOWERS_IN_ETA], Cluster out[TOWERS_IN_PHI][TOWERS_IN_ETA]){
-
+//#pragma HLS data_pack variable=inPhi1
+//#pragma HLS data_pack variable=inPhi2
+//#pragma HLS data_pack variable=out
 #pragma HLS ARRAY_PARTITION variable=inPhi1 complete dim=0
 #pragma HLS ARRAY_PARTITION variable=inPhi2 complete dim=0
 #pragma HLS ARRAY_PARTITION variable=out complete dim=0
+
+//#pragma HLS stable variable=A
 
    Cluster stitch_phi[TOWERS_IN_PHI][TOWERS_IN_ETA];
 #pragma HLS ARRAY_PARTITION variable=stitch_phi complete dim=0
@@ -251,6 +266,7 @@ bool stitchInPhi(const Cluster inPhi1[TOWERS_IN_ETA], const Cluster inPhi2[TOWER
    // Stitch in phi
    for (size_t teta = 0; teta < TOWERS_IN_ETA; teta++) {
 #pragma LOOP UNROLL
+//#pragma HLS dataflow
 
       if(inPhi1[teta].peak_phi == 4 && inPhi2[teta].peak_phi == 0 ){
 	 stitchNeigbours(inPhi1[teta], inPhi2[teta], stitch_phi[0][teta], stitch_phi[1][teta]);

@@ -15,6 +15,7 @@ Cluster unpackInputLink(hls::stream<axiword> &link) {
 #pragma HLS INLINE
 
    Crystal crystals[5][5];
+//#pragma HLS data_pack variable=crystals
 #pragma HLS ARRAY_PARTITION variable=crystals complete dim=0 
 
    uint8_t carry = 0;
@@ -83,6 +84,7 @@ Cluster unpackInputLink(hls::stream<axiword> &link) {
 
 
    Cluster tower;
+//#pragma HLS data_pack variable=tower
    //compute clusters in each tower using 5x5 crystals
    tower = computeCluster(crystals);
 
@@ -105,38 +107,43 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
    for (size_t i = 0; i < TOWERS_IN_ETA * TOWERS_IN_PHI; i++) {
 #pragma LOOP UNROLL
 
-      size_t  ieta = i / TOWERS_IN_PHI;  
-      size_t  iphi = i % TOWERS_IN_PHI;
-      ecalClusters[iphi][ieta] = unpackInputLink(link_in[i]);
+      size_t  teta = i / TOWERS_IN_PHI;  
+      size_t  tphi = i % TOWERS_IN_PHI;
+      ecalClusters[tphi][teta] = unpackInputLink(link_in[i]);
 
-      ecalClusters[iphi][ieta].tower_eta = ieta;
-      ecalClusters[iphi][ieta].tower_phi = iphi;
 
 //- #ifndef __SYNTHESIS__
-//-       cout<<"ecalClusters["<<iphi<<"]["<<ieta<<"]: "<<ecalClusters[iphi][ieta].toString()<<std::endl;
+//-       cout<<"ecalClusters["<<tphi<<"]["<<teta<<"]: "<<ecalClusters[tphi][teta].toString()<<std::endl;
 //- #endif
 
    }
 
 #ifndef __SYNTHESIS__
-   for (size_t i = 0; i < TOWERS_IN_ETA ; i++) {
-      cout << "Clustering[0]["<<i<<"]:"<< ecalClusters[0][i].toString() ;
+   for (size_t teta = 0; teta < TOWERS_IN_ETA ; teta++) {
+      cout << "Clustering[0]["<<teta<<"]:"<< ecalClusters[0][teta].toString() ;
       cout << "  ||  "; 
-      cout << "Clustering[1]["<<i<<"]:"<< ecalClusters[1][i].toString() << endl;
+      cout << "Clustering[1]["<<teta<<"]:"<< ecalClusters[1][teta].toString() << endl;
    }
+      cout<< std::endl << std::endl;
 #endif
  
    // Step 2: Merge neighbours in eta
    Cluster etaStitched_phi1[TOWERS_IN_ETA];
    Cluster etaStitched_phi2[TOWERS_IN_ETA];
+//#pragma HLS data_pack variable=etaStitched_phi1
+//#pragma HLS data_pack variable=etaStitched_phi2
 #pragma HLS ARRAY_PARTITION variable=etaStitched_phi1 complete dim=0 
 #pragma HLS ARRAY_PARTITION variable=etaStitched_phi2 complete dim=0 
+//#pragma HLS dataflow
+//#pragma HLS stable variable=etaStitched_phi1
+//#pragma HLS stable variable=etaStitched_phi2
+
 
    bool etaStitch_phi1 = stitchInEta( ecalClusters[0], etaStitched_phi1);
    bool etaStitch_phi2 = stitchInEta( ecalClusters[1], etaStitched_phi2);
 
 #ifndef __SYNTHESIS__
-   cout << " *** ETA stitched *** "<<std::endl;
+   cout <<endl<<"-->> Post Stitching: *** ETA stitched *** "<<std::endl;
    for (size_t i = 0; i < TOWERS_IN_ETA ; i++) {
       cout << "Clustering[0]["<<i<<"]:"<< etaStitched_phi1[i].toString() ;
       cout << "  ||  "; 
@@ -146,6 +153,7 @@ void algo_top(hls::stream<axiword> link_in[N_INPUT_LINKS], hls::stream<axiword> 
 
    //Step 3: Merge neighbours in phi
    Cluster ecalClustersStitched[TOWERS_IN_PHI][TOWERS_IN_ETA];
+//#pragma HLS data_pack variable=ecalClustersStitched
 #pragma HLS ARRAY_PARTITION variable=ecalClustersStitched complete dim=0
    
    bool phiStitch = stitchInPhi(etaStitched_phi1, etaStitched_phi2, ecalClustersStitched);

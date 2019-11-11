@@ -15,13 +15,13 @@
 const int N_WORDS_PER_FRAME	= 6;
 
 /** Algorithm specific parameters **/
-#define TOWERS_IN_ETA 17
+#define TOWERS_IN_ETA 7
 #define TOWERS_IN_PHI 2
 
 /** More common algorithm definitions, do not remove **/
 // N_INPUT_LINKS and N_OUTPUT_LINKS need to be numerically specified so that wrapper generators work.
 // -- N_INPUT_LINKS = TOWERS_IN_ETA*TOWERS_IN_PHI
-#define N_INPUT_LINKS	34 
+#define N_INPUT_LINKS	14 
 // -- N_OUTPUT_LINKS = TOWERS_IN_PHI*2 //For now we have each eta slice in two output links
 #define N_OUTPUT_LINKS	4
 
