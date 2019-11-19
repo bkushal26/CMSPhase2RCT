@@ -5,9 +5,8 @@ set_top algo_top
 add_files src/algo_top_parameters.h
 add_files src/algo_top.h
 add_files src/algo_top.cpp
-add_files src/ClusterFinder.h
-add_files src/sorter.h
-add_files src/sorter.cpp
+add_files src/objects.h
+add_files src/makeTower.h
 
 ### Add testbed files
 add_files -tb src/algo_top_tb.cpp
