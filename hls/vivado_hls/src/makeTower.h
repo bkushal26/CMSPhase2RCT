@@ -75,7 +75,11 @@ Tower makeTower(const Crystal crystals[5][5]) {
    for (int dEta = -1; dEta <= 1; dEta++) {
 #pragma LOOP UNROLL
       int eta = peakEta + dEta;
-      clusterEt = (eta >= 0 && eta < 5)? clusterEt + eta_strip[eta] : clusterEt;
+      if(eta >= 0 && eta < 5){
+	 clusterEt =  clusterEt + eta_strip[eta];
+      } else{
+	 clusterEt = clusterEt;
+      }
    }
 
    //for now setting peakTime and HoE == 0
