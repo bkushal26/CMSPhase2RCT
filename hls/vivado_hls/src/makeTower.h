@@ -1,5 +1,5 @@
-#ifndef __CLUSTERFINDER_H__
-#define __CLUSTERFINDER_H__
+#ifndef __MAKETOWER_H__
+#define __MAKETOWER_H__
 
 #include "algo_top_parameters.h"
 //#include <algorithm>
@@ -180,4 +180,4 @@ bool stitchInPhi(Tower inPhi1[TOWERS_IN_ETA], Tower inPhi2[TOWERS_IN_ETA], Tower
 }
 
 
-#endif /*!__CLUSTERFINDER_H__*/
+#endif /*!__MAKETOWER_H__*/
