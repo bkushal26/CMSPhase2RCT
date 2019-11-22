@@ -1,2 +1,1 @@
-source /data/tools/Xilinx/Vivado/2018.2/settings64.sh
-source /data/setup_xilinx_lic.sh
+source /opt/Xilinx/Vivado/2019.1/settings64.sh
