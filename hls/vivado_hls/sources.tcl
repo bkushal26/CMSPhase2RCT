@@ -5,8 +5,6 @@ set_top algo_top
 add_files src/algo_top_parameters.h
 add_files src/algo_top.h
 add_files src/algo_top.cpp
-add_files src/TowerMaker.h
-add_files src/TowerMaker.cpp
 
 ### Add testbed files
 add_files -tb src/algo_top_tb.cpp
